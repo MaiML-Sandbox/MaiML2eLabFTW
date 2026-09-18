@@ -40,3 +40,14 @@ class ModelTests(unittest.TestCase):
             "a1", "source.maiml", "source_maiml", REF, path=Path("source.maiml")
         )
         self.assertEqual(attachment.path, Path("source.maiml"))
+
+    def test_attachment_accepts_generated_content_with_no_path_or_uri(self) -> None:
+        # The eLabFTW adapter's generated maiml-metadata.json attachment has
+        # no on-disk file and nothing the MaiML source itself points to -
+        # its bytes come straight from the plan.
+        attachment = AttachmentDefinition(
+            "maiml-metadata:x", "maiml-metadata.json", "maiml_metadata", REF, content=b"{}"
+        )
+        self.assertEqual(attachment.content, b"{}")
+        self.assertIsNone(attachment.path)
+        self.assertIsNone(attachment.uri)

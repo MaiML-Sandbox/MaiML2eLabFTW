@@ -1,8 +1,14 @@
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from maiml2elabftw.adapters.elabftw import DuplicateDetector, ElabftwTemplateWriter, build_metadata_bundle
+from maiml2elabftw.adapters.elabftw import (
+    MAIML_METADATA_ATTACHMENT_NAME,
+    DuplicateDetector,
+    ElabftwTemplateWriter,
+    build_metadata_bundle,
+)
 from maiml2elabftw.adapters.maiml import ProtocolReader
 from maiml2elabftw.core.errors import ConversionError, ErrorCode
 from maiml2elabftw.ordering import PnmlOrderResolver
@@ -30,6 +36,7 @@ class FakeElabftwClient:
         self.deleted: list[int] = []
         self.calls: list[tuple] = []
         self.metadata_writes: dict[int, dict] = {}
+        self.uploaded_attachments: dict[str, object] = {}
 
     def _maybe_fail(self, name: str) -> None:
         if self.fail_stage == name:
@@ -61,6 +68,7 @@ class FakeElabftwClient:
     def upload_attachment(self, template_id: int, attachment) -> None:
         self.calls.append(("upload_attachment", template_id, attachment.attachment_id))
         self._maybe_fail(f"upload_attachment:{attachment.attachment_id}")
+        self.uploaded_attachments[attachment.attachment_id] = attachment
 
     def delete_template(self, template_id: int) -> None:
         self.calls.append(("delete_template", template_id))
@@ -101,13 +109,20 @@ class ElabftwTemplateWriterTests(unittest.TestCase):
         for stage in ("set_steps", "set_metadata"):
             self.assertIn(stage, stage_names)
         attachment_ids = {call[2] for call in client.calls if call[0] == "upload_attachment"}
-        self.assertEqual(attachment_ids, {item.attachment_id for item in plan.attachments})
+        # Every MaiML-described attachment, plus the generated
+        # maiml-metadata.json carrying the full reverse-conversion record.
+        expected_ids = {item.attachment_id for item in plan.attachments}
+        self.assertEqual(attachment_ids - expected_ids, {f"maiml-metadata:{plan.source.method_uuid}"})
+        self.assertTrue(expected_ids.issubset(attachment_ids))
 
-    def test_set_metadata_receives_one_bundle_with_fields_and_maiml_metadata(self) -> None:
-        # This is the exact hazard the design fix addresses: Custom Fields
-        # and the maiml/conversion_warnings blocks must travel in the same
-        # set_metadata() call, never two separate PATCHes that could race or
-        # clobber each other.
+    def test_set_metadata_receives_one_slim_bundle_plus_a_full_metadata_attachment(self) -> None:
+        # This is the exact hazard the original design fix addressed:
+        # Custom Fields and the pointer to the full record must travel in
+        # the same set_metadata() call, never two separate PATCHes that
+        # could race or clobber each other. The full reverse-conversion
+        # record itself now travels separately, as its own attachment,
+        # because embedding it directly in eLabFTW's metadata field dumped
+        # 12+ pages of internal bookkeeping into every generated PDF.
         plan = self._build_plan()
         client = FakeElabftwClient()
         writer = ElabftwTemplateWriter(client)
@@ -119,14 +134,24 @@ class ElabftwTemplateWriterTests(unittest.TestCase):
         self.assertIn("extra_fields", sent)
         self.assertIn("elabftw", sent)
         self.assertIn("extra_fields_groups", sent["elabftw"])
-        self.assertIn("maiml", sent)
-        self.assertIn("conversion_warnings", sent)
+        self.assertNotIn("maiml", sent)
+        self.assertNotIn("conversion_warnings", sent)
+        self.assertEqual(sent["maiml_source"]["document_uuid"], plan.source.document_uuid)
+        self.assertEqual(sent["maiml_source"]["method_uuid"], plan.source.method_uuid)
+        self.assertEqual(sent["maiml_source"]["metadata_attachment"], MAIML_METADATA_ATTACHMENT_NAME)
         self.assertEqual(
             {group["name"] for group in sent["elabftw"]["extra_fields_groups"]}, {"MATERIAL", "CONDITION", "RESULT"}
         )
         voltage = sent["extra_fields"]["AcceleratingVoltage [kV]"]
         self.assertEqual(voltage["type"], "number")
         self.assertEqual(voltage["value"], "200")
+
+        metadata_attachment = client.uploaded_attachments[f"maiml-metadata:{plan.source.method_uuid}"]
+        self.assertEqual(metadata_attachment.name, MAIML_METADATA_ATTACHMENT_NAME)
+        full_metadata = json.loads(metadata_attachment.content)
+        self.assertEqual(full_metadata, plan.metadata)
+        self.assertIn("maiml", full_metadata)
+        self.assertIn("conversion_warnings", full_metadata)
 
     def test_extra_fields_groups_lives_under_the_elabftw_key_not_top_level(self) -> None:
         # Confirmed against a real eLabFTW server (5.6.10) and the official

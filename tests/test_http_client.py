@@ -182,16 +182,49 @@ class HttpElabftwClientTests(unittest.TestCase):
         self.assertTrue(str(request.url).endswith("/experiments_templates/7"))
 
     # -- find_duplicate -----------------------------------------------------
+    #
+    # Confirmed empirically against a real server: GET /experiments_templates
+    # (the list endpoint) never includes "metadata" on its items - not
+    # without extended=1, and not with it either; only fetching a template
+    # individually (GET /experiments_templates/{id}) actually returns it. So
+    # every one of these fixtures gives the list response bare items (no
+    # "metadata" key at all, exactly like the real server does) and a
+    # separate canned response per individual GET for that item's metadata.
 
-    def test_find_duplicate_matches_document_and_method_uuid(self) -> None:
-        payload = [
-            {"id": 1, "metadata": {"maiml": {"source": {"document_uuid": "doc-a", "method_uuid": "m-a"}}}},
-            {"id": 2, "metadata": {"maiml": {"source": {"document_uuid": "doc-b", "method_uuid": "m-b"}}}},
-        ]
-        transport = RecordingTransport([lambda req: httpx.Response(200, json=payload)])
+    def test_find_duplicate_fetches_each_candidates_metadata_individually(self) -> None:
+        transport = RecordingTransport(
+            [
+                lambda req: httpx.Response(200, json=[{"id": 1}, {"id": 2}]),
+                lambda req: httpx.Response(
+                    200, json={"metadata": {"maiml_source": {"document_uuid": "doc-a", "method_uuid": "m-a"}}}
+                ),
+                lambda req: httpx.Response(
+                    200, json={"metadata": {"maiml_source": {"document_uuid": "doc-b", "method_uuid": "m-b"}}}
+                ),
+            ]
+        )
         client = make_client(transport)
 
         self.assertEqual(client.find_duplicate("doc-b", "m-b"), 2)
+        self.assertEqual(len(transport.requests), 3)
+        self.assertTrue(str(transport.requests[0].url).split("?")[0].endswith("/experiments_templates"))
+        self.assertTrue(str(transport.requests[1].url).endswith("/experiments_templates/1"))
+        self.assertTrue(str(transport.requests[2].url).endswith("/experiments_templates/2"))
+
+    def test_find_duplicate_stops_fetching_metadata_as_soon_as_a_match_is_found(self) -> None:
+        transport = RecordingTransport(
+            [
+                lambda req: httpx.Response(200, json=[{"id": 1}, {"id": 2}]),
+                lambda req: httpx.Response(
+                    200, json={"metadata": {"maiml_source": {"document_uuid": "doc-a", "method_uuid": "m-a"}}}
+                ),
+            ]
+        )
+        client = make_client(transport)
+
+        self.assertEqual(client.find_duplicate("doc-a", "m-a"), 1)
+        # id=2's own metadata was never fetched: no point once a match is found.
+        self.assertEqual(len(transport.requests), 2)
 
     def test_find_duplicate_returns_none_when_no_candidate_matches(self) -> None:
         transport = RecordingTransport([lambda req: httpx.Response(200, json=[])])
@@ -200,11 +233,67 @@ class HttpElabftwClientTests(unittest.TestCase):
         self.assertIsNone(client.find_duplicate("doc-x", "m-x"))
 
     def test_find_duplicate_parses_metadata_given_as_a_json_string(self) -> None:
-        payload = [{"id": 5, "metadata": '{"maiml": {"source": {"document_uuid": "doc-z", "method_uuid": "m-z"}}}'}]
-        transport = RecordingTransport([lambda req: httpx.Response(200, json=payload)])
+        transport = RecordingTransport(
+            [
+                lambda req: httpx.Response(200, json=[{"id": 5}]),
+                lambda req: httpx.Response(
+                    200,
+                    json={"metadata": '{"maiml_source": {"document_uuid": "doc-z", "method_uuid": "m-z"}}'},
+                ),
+            ]
+        )
         client = make_client(transport)
 
         self.assertEqual(client.find_duplicate("doc-z", "m-z"), 5)
+
+    def test_find_duplicate_never_uses_q_which_elabftw_only_matches_against_title_body_or_elabid(self) -> None:
+        # Confirmed via eLabFTW's own OpenAPI spec: "q" is documented as
+        # "Search for a term in title, body or elabid" - it never reaches
+        # metadata, so searching q=method_uuid would always match nothing
+        # and every re-run would silently create a new duplicate template.
+        transport = RecordingTransport([lambda req: httpx.Response(200, json=[])])
+        client = make_client(transport)
+
+        client.find_duplicate("doc-x", "m-x")
+
+        sent_params = transport.requests[0].url.params
+        self.assertNotIn("q", sent_params)
+
+    def test_find_duplicate_pages_through_every_template_past_the_default_page_size(self) -> None:
+        # limit/offset default to 15/0 per the OpenAPI spec, so a server
+        # with more templates than fit on one page must not hide a match
+        # that only shows up on a later page.
+        first_page = [{"id": i} for i in range(1, 101)]
+        second_page = [{"id": 101}]
+        responses = [lambda req: httpx.Response(200, json=first_page)]
+        responses += [lambda req: httpx.Response(200, json={"metadata": {"maiml_source": {}}}) for _ in range(100)]
+        responses.append(lambda req: httpx.Response(200, json=second_page))
+        responses.append(
+            lambda req: httpx.Response(
+                200, json={"metadata": {"maiml_source": {"document_uuid": "doc-z", "method_uuid": "m-z"}}}
+            )
+        )
+        transport = RecordingTransport(responses)
+        client = make_client(transport)
+
+        self.assertEqual(client.find_duplicate("doc-z", "m-z"), 101)
+        self.assertEqual(len(transport.requests), 103)
+        # requests[0] = list page 1, requests[1..100] = one detail GET per
+        # item on that page, requests[101] = list page 2, requests[102] =
+        # the detail GET for its one item (the match).
+        self.assertEqual(transport.requests[0].url.params["offset"], "0")
+        self.assertEqual(transport.requests[101].url.params["offset"], "100")
+
+    def test_find_duplicate_stops_once_a_page_comes_back_smaller_than_requested(self) -> None:
+        full_page = [{"id": i} for i in range(1, 101)]
+        responses = [lambda req: httpx.Response(200, json=full_page)]
+        responses += [lambda req: httpx.Response(200, json={"metadata": {"maiml_source": {}}}) for _ in range(100)]
+        responses.append(lambda req: httpx.Response(200, json=[]))
+        transport = RecordingTransport(responses)
+        client = make_client(transport)
+
+        self.assertIsNone(client.find_duplicate("doc-none", "m-none"))
+        self.assertEqual(len(transport.requests), 102)
 
     # -- set_steps: one POST per step, never retried -------------------------
 

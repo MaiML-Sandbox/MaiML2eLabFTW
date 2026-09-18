@@ -171,7 +171,10 @@ class ProtocolReader:
             attachments.extend(self._parse_insertions(parent, parent.get("id", method_id), source_path.parent))
 
         name = self._child_text(node, "name")
-        title = name or (f"{protocol_name} - {method_id}" if protocol_name else f"Method {method_id}")
+        # method_id (e.g. "MethodSEM") already reads as a name, so a bare
+        # "Method MethodSEM" fallback would just repeat itself; only
+        # prepend the protocol name when there is one to actually add.
+        title = name or (f"{protocol_name} - {method_id}" if protocol_name else method_id)
         return MethodProtocolModel(
             source=SourceIdentity(document_uuid, method_uuid, schema_version, source_path.name, source_hash),
             title=title,

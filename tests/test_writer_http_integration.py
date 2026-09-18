@@ -57,6 +57,9 @@ class WriterHttpIntegrationTests(unittest.TestCase):
         self.assertEqual(plan.attachments[0].source_kind, "source_maiml")
         base = "https://elab.example.test/api/v2/"
 
+        # +1 upload response: the generated maiml-metadata.json attachment
+        # travels alongside plan.attachments (see
+        # ElabftwTemplateWriter.create / metadata_bundle.build_metadata_bundle).
         transport = RecordingTransport(
             [
                 lambda req: httpx.Response(200, json=[]),  # find_duplicate: no match
@@ -68,7 +71,7 @@ class WriterHttpIntegrationTests(unittest.TestCase):
                     lambda req: httpx.Response(
                         201, headers={"Location": base + "experiments_templates/55/uploads/1"}
                     )
-                    for _ in plan.attachments
+                    for _ in range(len(plan.attachments) + 1)
                 ),
             ]
         )
@@ -80,41 +83,45 @@ class WriterHttpIntegrationTests(unittest.TestCase):
 
         self.assertEqual(template_id, 55)
 
-        # The metadata PATCH carried the full bundle in one request. eLabFTW
+        # The metadata PATCH carried the slim bundle in one request. eLabFTW
         # requires the "metadata" value itself to be a JSON-encoded string,
         # not a nested object (confirmed against a real server - see
         # HttpElabftwClient.set_metadata), so it is JSON-decoded twice here.
+        # The full reverse-conversion record travels separately, as its own
+        # attachment, so it never bloats eLabFTW's own metadata/PDF.
         metadata_request = next(req for req in transport.requests if req.method == "PATCH")
         metadata_value = json.loads(metadata_request.read())["metadata"]
         self.assertIsInstance(metadata_value, str)
         sent = json.loads(metadata_value)
         self.assertIn("extra_fields", sent)
         self.assertIn("extra_fields_groups", sent["elabftw"])
-        self.assertIn("maiml", sent)
-        self.assertIn("conversion_warnings", sent)
-        self.assertEqual(sent["maiml"]["source"]["method_uuid"], plan.source.method_uuid)
+        self.assertNotIn("maiml", sent)
+        self.assertNotIn("conversion_warnings", sent)
+        self.assertEqual(sent["maiml_source"]["method_uuid"], plan.source.method_uuid)
 
         upload_requests = [req for req in transport.requests if "/uploads" in str(req.url)]
-        self.assertEqual(len(upload_requests), len(plan.attachments))
+        self.assertEqual(len(upload_requests), len(plan.attachments) + 1)
 
     def test_duplicate_found_over_http_stops_before_any_write(self) -> None:
         plan = self._build_plan()
         base = "https://elab.example.test/api/v2/"
         document_uuid, method_uuid = plan.source.duplicate_key
 
+        # The list endpoint never carries "metadata" on a real server (see
+        # HttpElabftwClient.find_duplicate) - only an individual GET does -
+        # so the fixture returns a bare item from the list and the real
+        # metadata from the follow-up per-id GET.
         transport = RecordingTransport(
             [
+                lambda req: httpx.Response(200, json=[{"id": 9}]),
                 lambda req: httpx.Response(
                     200,
-                    json=[
-                        {
-                            "id": 9,
-                            "metadata": {
-                                "maiml": {"source": {"document_uuid": document_uuid, "method_uuid": method_uuid}}
-                            },
+                    json={
+                        "metadata": {
+                            "maiml_source": {"document_uuid": document_uuid, "method_uuid": method_uuid}
                         }
-                    ],
-                )
+                    },
+                ),
             ]
         )
         httpx_client = httpx.Client(transport=transport)
@@ -127,7 +134,7 @@ class WriterHttpIntegrationTests(unittest.TestCase):
             writer.create(plan)
         self.assertIs(caught.exception.code, ErrorCode.DUPLICATE_SOURCE)
         self.assertEqual(caught.exception.details["existing_template_id"], 9)
-        self.assertEqual(len(transport.requests), 1)  # only the duplicate-check GET
+        self.assertEqual(len(transport.requests), 2)  # the list GET and the one detail GET it needed
 
     def test_insertion_without_a_local_file_fails_upload_and_rolls_back(self) -> None:
         # Known current boundary: ProtocolReader keeps an insertion's <uri>

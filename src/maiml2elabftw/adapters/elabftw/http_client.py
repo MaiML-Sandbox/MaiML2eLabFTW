@@ -169,18 +169,53 @@ class HttpElabftwClient:
     # -- ElabftwClient Protocol ----------------------------------------
 
     def find_duplicate(self, document_uuid: str, method_uuid: str) -> int | None:
-        # eLabFTW's generic search matches against metadata text, so it can
-        # only narrow candidates - the document/method UUID match itself is
-        # re-checked here rather than trusted from the search result.
-        response = self._request(
-            "GET", "experiments_templates", params={"q": method_uuid, "extended": "1"}, retryable=True
-        )
-        for item in response.json():
-            metadata = self._parse_metadata_field(item.get("metadata"))
-            source = metadata.get("maiml", {}).get("source", {})
-            if source.get("document_uuid") == document_uuid and source.get("method_uuid") == method_uuid:
-                return int(item["id"])
-        return None
+        # Confirmed against eLabFTW's own OpenAPI spec: the "q" parameter is
+        # documented as "Search for a term in title, body or elabid" - it
+        # never reaches into the metadata JSON column. An earlier version of
+        # this method searched with q=method_uuid, which always matched
+        # zero candidates (a method UUID lives only in metadata.maiml_source,
+        # never in the title/body/elabid).
+        #
+        # Confirmed empirically against a real server (see the project's own
+        # diagnostic run): GET /experiments_templates - the list endpoint -
+        # never returns "metadata" at all, with or without extended=1; it
+        # comes back as None on every item either way. Only fetching a
+        # template individually (GET /experiments_templates/{id}) actually
+        # includes "metadata". A first attempt at this fix paged through the
+        # list and read item.get("metadata") directly, which looked
+        # plausible but was checking a field that is simply never populated
+        # on that endpoint - so it still returned None for every candidate
+        # and every re-run kept creating a fresh duplicate.
+        #
+        # There is no server-side way to search or list by metadata content,
+        # so every existing template's id is paged through and then each one
+        # is fetched individually to read its real metadata - one extra GET
+        # per template, but the only way to see a field the list endpoint
+        # never carries. `limit`/`offset` default to 15/0 per the OpenAPI
+        # spec; a page smaller than what was asked for means there is
+        # nothing left to fetch.
+        limit = 100
+        offset = 0
+        while True:
+            response = self._request(
+                "GET",
+                "experiments_templates",
+                params={"limit": limit, "offset": offset},
+                retryable=True,
+            )
+            page = response.json()
+            for item in page:
+                template_id = int(item["id"])
+                detail = self._request(
+                    "GET", f"experiments_templates/{template_id}", retryable=True
+                )
+                metadata = self._parse_metadata_field(detail.json().get("metadata"))
+                source = metadata.get("maiml_source", {})
+                if source.get("document_uuid") == document_uuid and source.get("method_uuid") == method_uuid:
+                    return template_id
+            if len(page) < limit:
+                return None
+            offset += limit
 
     def create_template(self, *, title: str, body: str) -> int:
         response = self._request(
@@ -236,6 +271,8 @@ class HttpElabftwClient:
 
     @staticmethod
     def _read_attachment_content(attachment: AttachmentDefinition) -> tuple[bytes, str]:
+        if attachment.content is not None:
+            return attachment.content, attachment.name
         if attachment.path is not None:
             return attachment.path.read_bytes(), attachment.name
         raise ElabftwApiError(

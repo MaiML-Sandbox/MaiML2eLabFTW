@@ -92,6 +92,20 @@ class ProtocolReaderTests(unittest.TestCase):
         path.write_text(xml, encoding="utf-8")
         return ProtocolReader().read(path)
 
+    def test_title_falls_back_to_the_bare_method_id_without_any_name(self) -> None:
+        # method_id (e.g. "MethodSEM") already reads as a name; a fallback
+        # of "Method MethodSEM" would just repeat itself.
+        no_names = XML.replace("<name>SEMAcquisition</name>\n      ", "").replace(
+            "<name>MicroscopyProtocol</name>\n    ", ""
+        )
+        method = self._read(no_names).methods[0]
+        self.assertEqual(method.title, "method-1")
+
+    def test_title_falls_back_to_protocol_name_dash_method_id_when_protocol_is_named(self) -> None:
+        no_method_name = XML.replace("<name>SEMAcquisition</name>\n      ", "")
+        method = self._read(no_method_name).methods[0]
+        self.assertEqual(method.title, "MicroscopyProtocol - method-1")
+
     def test_reads_method_pnml_programs_and_scoped_templates(self) -> None:
         document = self._read()
         self.assertEqual(document.document_uuid, "11111111-1111-4111-8111-111111111111")

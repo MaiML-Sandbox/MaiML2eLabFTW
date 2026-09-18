@@ -6,7 +6,7 @@ from ...core.errors import ConversionError, ErrorCode
 from ...core.models import TemplatePlan
 from .client import ElabftwClient
 from .duplicate import DuplicateDetector
-from .metadata_bundle import build_metadata_bundle
+from .metadata_bundle import build_full_metadata_attachment, build_metadata_bundle
 
 
 class ElabftwTemplateWriter:
@@ -19,10 +19,13 @@ class ElabftwTemplateWriter:
             -> ElabftwTemplateWriter
                  - create_template
                  - set_steps
-                 - set_metadata (Custom Fields + maiml metadata, ONE call -
-                   see metadata_bundle.build_metadata_bundle for why these
+                 - set_metadata (Custom Fields + a pointer to the full
+                   metadata attachment, ONE call - see
+                   metadata_bundle.build_metadata_bundle for why these
                    can't be two separate PATCHes)
-                 - upload_attachment (source_maiml, then insertions)
+                 - upload_attachment (source_maiml, insertions, then the
+                   generated maiml-metadata.json carrying the full
+                   reverse-conversion record)
                  - rollback on failure
 
     Every stage after ``create_template`` is guarded: if any of them raises,
@@ -62,7 +65,13 @@ class ElabftwTemplateWriter:
             except Exception as exc:  # noqa: BLE001 - any client failure means "roll back this stage"
                 self._fail_and_rollback(template_id, stage=stage, original=exc)
 
-        for attachment in plan.attachments:
+        # The generated maiml-metadata.json attachment travels alongside the
+        # MaiML-described ones (source_maiml, insertions) - same upload
+        # call, same rollback-on-failure treatment - it's just not
+        # something method.attachments itself knows about, since deciding
+        # to split it out is an eLabFTW-storage concern (see
+        # metadata_bundle.build_metadata_bundle), not a MaiML-domain one.
+        for attachment in (*plan.attachments, build_full_metadata_attachment(plan)):
             try:
                 self._client.upload_attachment(template_id, attachment)
             except Exception as exc:  # noqa: BLE001

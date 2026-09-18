@@ -1,30 +1,45 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from ...core.models import CustomFieldPlan, TemplatePlan
+from ...core.models import AttachmentDefinition, CustomFieldPlan, SourceRef, TemplatePlan
 
 # Canonical group order. Only groups that actually have at least one field
 # are included in the bundle, so a method with no resultTemplate simply has
 # no RESULT group rather than an empty one.
 _GROUP_ORDER = ("MATERIAL", "CONDITION", "RESULT")
 
+# Filename used for the generated attachment carrying the full
+# reverse-conversion metadata. Referenced back from the slim eLabFTW
+# metadata bundle's "maiml_source.metadata_attachment" so a human (or a
+# future tool) can find it without guessing.
+MAIML_METADATA_ATTACHMENT_NAME = "maiml-metadata.json"
+
 
 def build_metadata_bundle(plan: TemplatePlan) -> dict[str, Any]:
-    """Assemble the single metadata JSON object eLabFTW stores for a template.
+    """Assemble the metadata JSON object eLabFTW stores directly on the
+    template (its Custom Fields, plus just enough to find the full
+    reverse-conversion record).
 
     eLabFTW keeps Custom Fields (``extra_fields`` / ``elabftw.extra_fields_groups``)
-    and arbitrary metadata (this project's ``maiml`` / ``conversion_warnings``
-    blocks) in the same JSON blob on the template. Building it here, once,
-    and sending it with a single ``set_metadata`` call avoids the read-modify
-    -write race a second PATCH would otherwise risk (one write clobbering
-    the other). The resulting shape is::
+    and arbitrary metadata in the same JSON blob on the template, and its
+    own PDF export renders that whole blob. The full reverse-conversion
+    record this project builds (PNML, steps, every field's source
+    location, ...) is tens of fields deep and dwarfs everything else in
+    the resulting PDF - a real conversion produced 12+ pages of it. So it
+    is never embedded here: it is written once as its own attachment (see
+    ``build_full_metadata_attachment``) and this bundle keeps only what
+    duplicate detection and a human skimming the PDF actually need. The
+    resulting shape is::
 
         {
           "extra_fields": {"<label>": {"type": ..., "value": ..., "group_id": ..., ...}},
           "elabftw": {"extra_fields_groups": [{"id": 1, "name": "MATERIAL"}, ...]},
-          "maiml": {...},
-          "conversion_warnings": [...],
+          "maiml_source": {
+            "document_uuid": ..., "method_uuid": ..., "mapping_version": ...,
+            "metadata_attachment": "maiml-metadata.json",
+          },
         }
 
     Group definitions live under ``elabftw.extra_fields_groups`` - NOT a
@@ -53,29 +68,59 @@ def build_metadata_bundle(plan: TemplatePlan) -> dict[str, Any]:
             "required": field.required,
         }
 
-    # plan.metadata already holds {"maiml": ..., "conversion_warnings": ...};
-    # copy it (shallow - we only add new top-level keys, never mutate these)
-    # rather than writing into the TemplatePlan's own dict.
-    bundle: dict[str, Any] = dict(plan.metadata)
-    # Merge into any existing "elabftw" block rather than overwriting it,
-    # in case a future addition ever needs to set other elabftw.* keys
-    # (e.g. display_main_text) alongside extra_fields_groups.
-    elabftw_block = dict(bundle.get("elabftw", {}))
-    elabftw_block["extra_fields_groups"] = extra_fields_groups
-    bundle["elabftw"] = elabftw_block
-    bundle["extra_fields"] = extra_fields
-    return bundle
+    generator = plan.metadata.get("maiml", {}).get("generator", {})
+    return {
+        "extra_fields": extra_fields,
+        "elabftw": {"extra_fields_groups": extra_fields_groups},
+        "maiml_source": {
+            "document_uuid": plan.source.document_uuid,
+            "method_uuid": plan.source.method_uuid,
+            "mapping_version": generator.get("mapping_version"),
+            "metadata_attachment": MAIML_METADATA_ATTACHMENT_NAME,
+        },
+    }
+
+
+def build_full_metadata_attachment(plan: TemplatePlan) -> AttachmentDefinition:
+    """Build the ``maiml-metadata.json`` attachment carrying the complete
+    reverse-conversion record (``plan.metadata``: PNML, steps, every
+    field's source location, attachments, references, conversion_summary,
+    and conversion_warnings) that used to be embedded directly in
+    eLabFTW's own metadata field. See ``build_metadata_bundle`` for why
+    that moved out.
+
+    The data itself is unchanged - this is purely about *where* eLabFTW
+    stores it - so anything that consumed the old embedded ``maiml`` block
+    can get the same content back by downloading this attachment.
+    """
+    content = json.dumps(plan.metadata, ensure_ascii=False, indent=2).encode("utf-8")
+    return AttachmentDefinition(
+        attachment_id=f"maiml-metadata:{plan.source.method_uuid}",
+        name=MAIML_METADATA_ATTACHMENT_NAME,
+        source_kind="maiml_metadata",
+        source_ref=SourceRef("generated", None),
+        content=content,
+        media_type="application/json",
+    )
 
 
 def _unique_label(extra_fields: dict[str, Any], field: CustomFieldPlan) -> str:
     """CustomFieldPlan.label is only guaranteed unique within its own
     Template (TemplatePlanner already suffixes "#2" etc. for repeated keys
-    there); extra_fields is flat across every group, so guard against the
-    rarer cross-group collision instead of silently overwriting one field
-    with another."""
+    there); extra_fields is flat across every group, so guard against a
+    cross-Template collision instead of silently overwriting one field
+    with another.
+
+    The disambiguator is the source Template's own id, not its group name:
+    two Templates can (and commonly do) share both a group and a key -
+    e.g. a materialTemplate for the input sample and another for the
+    measured/output sample both using "SampleName" - and a "(MATERIAL)"
+    suffix on both would say nothing about which is which.
+    """
     if field.label not in extra_fields:
         return field.label
-    disambiguated = f"{field.label} ({field.group_name})"
+    template_id = field.metadata.get("template_id")
+    disambiguated = f"{field.label} ({template_id})" if template_id else f"{field.label} ({field.group_name})"
     if disambiguated not in extra_fields:
         return disambiguated
     return f"{disambiguated} [{field.field_id}]"

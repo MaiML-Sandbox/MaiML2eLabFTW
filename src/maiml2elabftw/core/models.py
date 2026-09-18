@@ -167,18 +167,24 @@ class ProgramDefinition:
 class AttachmentDefinition:
     attachment_id: str
     name: str
-    source_kind: Literal["insertion", "source_maiml"]
+    # "maiml_metadata" is not something the MaiML source describes - it is
+    # the eLabFTW adapter's own generated attachment (see
+    # metadata_bundle.build_full_metadata_attachment), carrying the full
+    # reverse-conversion JSON that used to be embedded directly in
+    # eLabFTW's metadata field (see build_metadata_bundle's docstring).
+    source_kind: Literal["insertion", "source_maiml", "maiml_metadata"]
     source_ref: SourceRef
     path: Path | None = None
     uri: str | None = None
+    content: bytes | None = None
     sha256: str | None = None
     media_type: str | None = None
     hash_value: str | None = None
     hash_method: str | None = None
 
     def __post_init__(self) -> None:
-        if self.path is None and self.uri is None:
-            raise ValueError("attachment requires path or uri")
+        if self.path is None and self.uri is None and self.content is None:
+            raise ValueError("attachment requires path, uri, or content")
 
 
 @dataclass(frozen=True)
