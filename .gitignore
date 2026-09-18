@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+dist/
+build/
+
+# ローカルでの実サーバー疎通テスト用フォルダ (APIキー等の接続情報や、実際の
+# eLabFTWデータから生成した.maimlが置かれるため、リポジトリには含めない)
+localtests/

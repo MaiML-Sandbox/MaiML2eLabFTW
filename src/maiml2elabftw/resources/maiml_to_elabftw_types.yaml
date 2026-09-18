@@ -1,0 +1,354 @@
+version: 1
+source_schema: "MaiML Schema 1.0.0"
+
+defaults:
+  unknown_type:
+    supported: false
+    strategy: error
+    error_code: UNSUPPORTED_FIELD_TYPE
+  preserve_metadata:
+    - xsi_type
+    - key
+    - description
+    - uncertainty
+    - formatString
+    - units
+    - scaleFactor
+    - nested_properties
+    - nested_contents
+  unit_policy: append_to_field_label
+  enum_policy: text
+  date_time_policy: date_part
+  list_policy: json_array_text
+  repeated_value_policy: preserve_order
+
+property_types:
+  stringType: &scalar_text
+    supported: true
+    elabftw_type: text
+    strategy: scalar_text
+    value_type: string
+
+  tokenType:
+    <<: *scalar_text
+    value_type: token
+
+  idType:
+    <<: *scalar_text
+    value_type: ID
+
+  idRefType:
+    <<: *scalar_text
+    value_type: IDREF
+    validate_reference: true
+
+  qualifiedNameType:
+    <<: *scalar_text
+    value_type: QName
+    preserve_namespace: true
+
+  dateTimeType:
+    supported: true
+    elabftw_type: date
+    strategy: date_part
+    value_type: dateTime
+    preserve_original_value: true
+    preserve_attributes: [formatString]
+
+  decimalType: &scalar_number
+    supported: true
+    elabftw_type: number
+    strategy: scalar_number
+    value_type: decimal
+    unit_in_label: true
+    apply_scale_factor: false
+    preserve_attributes: [formatString, units, scaleFactor]
+
+  doubleType:
+    <<: *scalar_number
+    value_type: double
+
+  floatType:
+    <<: *scalar_number
+    value_type: float
+
+  intType:
+    <<: *scalar_number
+    value_type: int
+
+  longType:
+    <<: *scalar_number
+    value_type: long
+
+  shortType:
+    <<: *scalar_number
+    value_type: short
+
+  byteType:
+    <<: *scalar_number
+    value_type: byte
+
+  unsignedIntType:
+    <<: *scalar_number
+    value_type: unsignedInt
+
+  unsignedLongType:
+    <<: *scalar_number
+    value_type: unsignedLong
+
+  unsignedShortType:
+    <<: *scalar_number
+    value_type: unsignedShort
+
+  unsignedByteType:
+    <<: *scalar_number
+    value_type: unsignedByte
+
+  booleanType:
+    supported: true
+    elabftw_type: checkbox
+    strategy: scalar_boolean
+    value_type: boolean
+
+  base64BinaryType: &scalar_binary
+    supported: true
+    elabftw_type: text
+    strategy: encoded_text
+    value_type: base64Binary
+    preserve_encoding: true
+    warning_code: BINARY_AS_TEXT
+
+  hexBinaryType:
+    <<: *scalar_binary
+    value_type: hexBinary
+
+  uriType:
+    supported: true
+    elabftw_type: url
+    strategy: scalar_uri
+    value_type: anyURI
+
+  uuidType:
+    <<: *scalar_text
+    value_type: uuid
+    validate_uuid: true
+
+  languageType:
+    <<: *scalar_text
+    value_type: language
+
+  propertyListType:
+    supported: false
+    elabftw_type: null
+    strategy: metadata_only
+    value_type: nested_property_container
+    error_code: UNSUPPORTED_COMPLEX_FIELD
+
+  stringListType: &list_text
+    supported: true
+    elabftw_type: text
+    strategy: json_array_text
+    value_type: stringList
+    preserve_order: true
+
+  idRefListType:
+    <<: *list_text
+    value_type: idRefList
+    validate_references: true
+
+  qualifiedNameListType:
+    <<: *list_text
+    value_type: qualifiedNameList
+    preserve_namespace: true
+
+  dateTimeListType:
+    <<: *list_text
+    value_type: dateTimeList
+    preserve_attributes: [formatString]
+
+  decimalListType: &numeric_list
+    <<: *list_text
+    value_type: decimalList
+    unit_in_label: true
+    apply_scale_factor: false
+    preserve_attributes: [formatString, units, scaleFactor]
+
+  doubleListType:
+    <<: *numeric_list
+    value_type: doubleList
+
+  floatListType:
+    <<: *numeric_list
+    value_type: floatList
+
+  intListType:
+    <<: *numeric_list
+    value_type: intList
+
+  longListType:
+    <<: *numeric_list
+    value_type: longList
+
+  shortListType:
+    <<: *numeric_list
+    value_type: shortList
+
+  byteListType:
+    <<: *numeric_list
+    value_type: byteList
+
+  unsignedIntListType:
+    <<: *numeric_list
+    value_type: unsignedIntList
+
+  unsignedLongListType:
+    <<: *numeric_list
+    value_type: unsignedLongList
+
+  unsignedShortListType:
+    <<: *numeric_list
+    value_type: unsignedShortList
+
+  unsignedByteListType:
+    <<: *numeric_list
+    value_type: unsignedByteList
+
+  booleanListType:
+    <<: *list_text
+    value_type: booleanList
+
+  base64BinaryListType: &binary_list
+    <<: *list_text
+    value_type: base64BinaryList
+    preserve_encoding: true
+    warning_code: BINARY_AS_TEXT
+
+  hexBinaryListType:
+    <<: *binary_list
+    value_type: hexBinaryList
+
+  uriListType:
+    <<: *list_text
+    value_type: uriList
+
+  uuidListType:
+    <<: *list_text
+    value_type: uuidList
+    validate_uuid: true
+
+  languageListType:
+    <<: *list_text
+    value_type: languageList
+
+  stringEnumType:
+    supported: true
+    elabftw_type: text
+    strategy: enum_text
+    value_type: stringEnum
+    preserve_allowed_values: true
+    preserve_order: true
+
+content_types:
+  contentStringListType: &content_list_text
+    supported: true
+    elabftw_type: text
+    strategy: json_array_text
+    value_type: stringList
+    preserve_order: true
+    preserve_content_attributes: [axis, size, id, ref]
+
+  contentIdRefListType:
+    <<: *content_list_text
+    value_type: idRefList
+    validate_references: true
+
+  contentQualifiedNameListType:
+    <<: *content_list_text
+    value_type: qualifiedNameList
+    preserve_namespace: true
+
+  contentDateTimeListType:
+    <<: *content_list_text
+    value_type: dateTimeList
+    preserve_attributes: [formatString]
+
+  contentDecimalListType: &content_numeric_list
+    <<: *content_list_text
+    value_type: decimalList
+    unit_in_label: true
+    apply_scale_factor: false
+    preserve_attributes: [formatString, units, scaleFactor]
+
+  contentDoubleListType:
+    <<: *content_numeric_list
+    value_type: doubleList
+
+  contentFloatListType:
+    <<: *content_numeric_list
+    value_type: floatList
+
+  contentIntListType:
+    <<: *content_numeric_list
+    value_type: intList
+
+  contentLongListType:
+    <<: *content_numeric_list
+    value_type: longList
+
+  contentShortListType:
+    <<: *content_numeric_list
+    value_type: shortList
+
+  contentByteListType:
+    <<: *content_numeric_list
+    value_type: byteList
+
+  contentUnsignedIntListType:
+    <<: *content_numeric_list
+    value_type: unsignedIntList
+
+  contentUnsignedLongListType:
+    <<: *content_numeric_list
+    value_type: unsignedLongList
+
+  contentUnsignedShortListType:
+    <<: *content_numeric_list
+    value_type: unsignedShortList
+
+  contentUnsignedByteListType:
+    <<: *content_numeric_list
+    value_type: unsignedByteList
+
+  contentBooleanListType:
+    <<: *content_list_text
+    value_type: booleanList
+
+  contentBase64BinaryListType: &content_binary_list
+    <<: *content_list_text
+    value_type: base64BinaryList
+    preserve_encoding: true
+    warning_code: BINARY_AS_TEXT
+
+  contentHexBinaryListType:
+    <<: *content_binary_list
+    value_type: hexBinaryList
+
+  contentUriListType:
+    <<: *content_list_text
+    value_type: uriList
+
+  contentUuidListType:
+    <<: *content_list_text
+    value_type: uuidList
+    validate_uuid: true
+
+  contentLanguageListType:
+    <<: *content_list_text
+    value_type: languageList
+
+  contentStringEnumType:
+    <<: *content_list_text
+    strategy: enum_text
+    value_type: stringEnum
+    preserve_allowed_values: true
+

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MaiML-Sandbox/MaiML2eLabFTW/schemas/type_mapping.schema.json",
+  "title": "MaiML to eLabFTW Type Mapping",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "source_schema", "defaults", "property_types", "content_types"],
+  "properties": {
+    "version": {"const": 1},
+    "source_schema": {"type": "string", "minLength": 1},
+    "defaults": {"type": "object"},
+    "property_types": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/typeRule"}
+    },
+    "content_types": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/typeRule"}
+    }
+  },
+  "$defs": {
+    "stringArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "typeRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported", "elabftw_type", "strategy", "value_type"],
+      "properties": {
+        "supported": {"type": "boolean"},
+        "elabftw_type": {
+          "type": ["string", "null"],
+          "enum": ["text", "number", "checkbox", "date", "url", null]
+        },
+        "strategy": {
+          "enum": [
+            "scalar_text",
+            "scalar_number",
+            "scalar_boolean",
+            "scalar_uri",
+            "date_part",
+            "encoded_text",
+            "json_array_text",
+            "enum_text",
+            "metadata_only",
+            "error"
+          ]
+        },
+        "value_type": {"type": "string", "minLength": 1},
+        "unit_in_label": {"type": "boolean"},
+        "apply_scale_factor": {"type": "boolean"},
+        "preserve_original_value": {"type": "boolean"},
+        "preserve_encoding": {"type": "boolean"},
+        "preserve_order": {"type": "boolean"},
+        "preserve_namespace": {"type": "boolean"},
+        "preserve_allowed_values": {"type": "boolean"},
+        "validate_reference": {"type": "boolean"},
+        "validate_references": {"type": "boolean"},
+        "validate_uuid": {"type": "boolean"},
+        "preserve_attributes": {"$ref": "#/$defs/stringArray"},
+        "preserve_content_attributes": {"$ref": "#/$defs/stringArray"},
+        "warning_code": {"type": "string", "minLength": 1},
+        "error_code": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

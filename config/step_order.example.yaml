@@ -1,0 +1,22 @@
+version: 1
+
+source:
+  document_uuid: "11111111-1111-4111-8111-111111111111"
+  method_uuid: "22222222-2222-4222-8222-222222222222"
+
+reason: "PNMLに分岐があるため、eLabFTWでの実行順を明示する"
+
+steps:
+  - transition_id: "T1"
+    instruction_ids:
+      - "instruction-A"
+
+  - transition_id: "T2"
+    instruction_ids:
+      - "instruction-B"
+      - "instruction-C"
+    note: "同一transition内ではBの後にCを実施する"
+
+  - transition_id: "T3"
+    instruction_ids:
+      - "instruction-A"

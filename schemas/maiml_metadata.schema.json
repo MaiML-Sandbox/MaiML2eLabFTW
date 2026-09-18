@@ -1,0 +1,457 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MaiML-Sandbox/MaiML2eLabFTW/schemas/maiml_metadata.schema.json",
+  "title": "MaiML2eLabFTW Metadata",
+  "description": "MaiML protocolFileRootTypeから生成したeLabFTW Experiment Templateに保持する逆変換・追跡用metadata",
+  "type": "object",
+  "required": ["maiml"],
+  "properties": {
+    "maiml": {
+      "$ref": "#/$defs/maimlMetadata"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S(?:.*\\S)?$"
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[3-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+    "sourceLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element_kind"],
+      "properties": {
+        "element_kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "element_id": {
+          "type": ["string", "null"]
+        },
+        "xpath": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "sourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_type",
+        "document_id",
+        "document_uuid",
+        "protocol_id",
+        "protocol_uuid",
+        "method_id",
+        "method_uuid",
+        "schema_version",
+        "filename",
+        "sha256"
+      ],
+      "properties": {
+        "source_type": {
+          "const": "protocolFileRootType"
+        },
+        "document_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "document_uuid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "protocol_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "protocol_uuid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "method_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "method_uuid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "schema_version": {
+          "const": "1.0"
+        },
+        "features": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "mapping_version", "generated_at"],
+      "properties": {
+        "name": {
+          "const": "MaiML2eLabFTW"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mapping_version": {
+          "const": "1"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "step_order_source": {
+          "enum": ["pnml", "yaml"]
+        },
+        "step_order_file_sha256": {
+          "oneOf": [
+            {"$ref": "#/$defs/sha256"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "place": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "name": {"$ref": "#/$defs/nullableString"},
+        "description": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "name": {"$ref": "#/$defs/nullableString"},
+        "description": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "arc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "target"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "source": {"$ref": "#/$defs/identifier"},
+        "target": {"$ref": "#/$defs/identifier"},
+        "name": {"$ref": "#/$defs/nullableString"},
+        "description": {"$ref": "#/$defs/nullableString"}
+      }
+    },
+    "pnml": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "uuid", "places", "transitions", "arcs"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "uuid": {"$ref": "#/$defs/uuid"},
+        "name": {"$ref": "#/$defs/nullableString"},
+        "places": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/place"}
+        },
+        "transitions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/transition"}
+        },
+        "arcs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/arc"}
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "transition_id",
+        "program_id",
+        "instruction_id",
+        "instruction_uuid",
+        "occurrence",
+        "order_source",
+        "source"
+      ],
+      "properties": {
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "elabftw_step_id": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "transition_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "program_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "instruction_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "instruction_uuid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "occurrence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "order_source": {
+          "enum": ["pnml", "yaml"]
+        },
+        "source": {
+          "$ref": "#/$defs/sourceLocation"
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field_id",
+        "elabftw_name",
+        "group",
+        "role",
+        "template_kind",
+        "template_id",
+        "template_uuid",
+        "template_scope",
+        "source_kind",
+        "source_key",
+        "xsi_type",
+        "occurrence",
+        "source"
+      ],
+      "properties": {
+        "field_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "elabftw_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "group": {
+          "enum": ["MATERIAL", "CONDITION", "RESULT"]
+        },
+        "role": {
+          "enum": ["material", "condition", "result"]
+        },
+        "template_kind": {
+          "enum": ["materialTemplate", "conditionTemplate", "resultTemplate"]
+        },
+        "template_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "template_uuid": {
+          "$ref": "#/$defs/uuid"
+        },
+        "template_scope": {
+          "enum": ["protocol", "method", "program"]
+        },
+        "program_id": {
+          "type": ["string", "null"]
+        },
+        "source_kind": {
+          "enum": ["property", "content"]
+        },
+        "source_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "xsi_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "elabftw_type": {
+          "enum": ["number", "checkbox", "date", "url", "text"]
+        },
+        "unit": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "format_string": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "scale_factor": {
+          "type": ["number", "null"]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "occurrence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source": {
+          "$ref": "#/$defs/sourceLocation"
+        }
+      }
+    },
+    "attachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attachment_id", "source_kind", "name", "source"],
+      "properties": {
+        "attachment_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "elabftw_upload_id": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "source_kind": {
+          "enum": ["source_maiml", "insertion"]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uri": {
+          "type": ["string", "null"],
+          "format": "uri-reference"
+        },
+        "uuid": {
+          "oneOf": [
+            {"$ref": "#/$defs/uuid"},
+            {"type": "null"}
+          ]
+        },
+        "hash_method": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "hash_value": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "sha256": {
+          "oneOf": [
+            {"$ref": "#/$defs/sha256"},
+            {"type": "null"}
+          ]
+        },
+        "format": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceLocation"
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "ref", "source"],
+      "properties": {
+        "kind": {
+          "enum": ["placeRef", "transitionRef", "templateRef"]
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "ref": {
+          "$ref": "#/$defs/identifier"
+        },
+        "initial_marking": {
+          "type": ["boolean", "null"]
+        },
+        "source": {
+          "$ref": "#/$defs/sourceLocation"
+        }
+      }
+    },
+    "conversionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mapped", "preserved_as_metadata", "attached", "warnings"],
+      "properties": {
+        "mapped": {"type": "integer", "minimum": 0},
+        "preserved_as_metadata": {"type": "integer", "minimum": 0},
+        "attached": {"type": "integer", "minimum": 0},
+        "warnings": {"type": "integer", "minimum": 0}
+      }
+    },
+    "maimlMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "generator",
+        "pnml",
+        "steps",
+        "fields",
+        "attachments",
+        "references",
+        "conversion_summary"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/sourceIdentity"
+        },
+        "generator": {
+          "$ref": "#/$defs/generator"
+        },
+        "elabftw_template_id": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "pnml": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/pnml"}
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/step"}
+        },
+        "fields": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/field"}
+        },
+        "attachments": {
+          "type": "array",
+          "minItems": 1,
+          "contains": {
+            "type": "object",
+            "properties": {
+              "source_kind": {"const": "source_maiml"}
+            },
+            "required": ["source_kind"]
+          },
+          "items": {"$ref": "#/$defs/attachment"}
+        },
+        "references": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/reference"}
+        },
+        "conversion_summary": {
+          "$ref": "#/$defs/conversionSummary"
+        }
+      }
+    }
+  }
+}

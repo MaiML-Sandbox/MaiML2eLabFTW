@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MaiML-Sandbox/MaiML2eLabFTW/schemas/step_order.schema.json",
+  "title": "MaiML2eLabFTW Step Order Override",
+  "description": "PNMLをeLabFTWの線形Stepsへ表示する順序を明示するYAML/JSON設定",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "source", "steps"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_uuid", "method_uuid"],
+      "properties": {
+        "document_uuid": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "method_uuid": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/transitionStep"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S(?:.*\\S)?$"
+    },
+    "transitionStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transition_id", "instruction_ids"],
+      "properties": {
+        "transition_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "instruction_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,2 @@
+"""eLabFTW-independent domain model."""
+
