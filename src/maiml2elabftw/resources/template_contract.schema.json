@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maiml2elabftw.local/schemas/template_contract.schema.json",
+  "title": "MaiML Template Contract",
+  "description": "docs/template_contract_design.md 第3節・第11節に対応する、TemplateContractのファイル表現(version 1)。読み込みは maiml2elabftw.contract.load_template_contract が行う。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["document_uuid", "method_uuid", "mapping_version", "requirements"],
+  "properties": {
+    "document_uuid": { "type": "string", "minLength": 1 },
+    "method_uuid": { "type": "string", "minLength": 1 },
+    "mapping_version": { "type": "string", "minLength": 1 },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/requirement" }
+    }
+  },
+  "$defs": {
+    "capture_source": {
+      "type": "string",
+      "description": "設計ドキュメント第4節の取得元。CaptureSourceの値と一致する。",
+      "enum": [
+        "protocol",
+        "eln_system",
+        "user_input",
+        "user_selection",
+        "attachment",
+        "generated",
+        "reused_identity",
+        "derived"
+      ]
+    },
+    "identity_policy": {
+      "type": "string",
+      "description": "設計ドキュメント第7節のidentity policy。IdentityPolicyの値と一致する。",
+      "enum": [
+        "generate_new",
+        "reuse_existing",
+        "reference_protocol_entity",
+        "reuse_previous_result"
+      ]
+    },
+    "validation_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule_type", "parameters"],
+      "properties": {
+        "rule_type": { "type": "string", "minLength": 1 },
+        "parameters": { "type": "object" }
+      }
+    },
+    "elabftw_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "group": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "maiml_target", "source", "required", "cardinality"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "maiml_target": { "type": "string", "minLength": 1 },
+        "source": { "$ref": "#/$defs/capture_source" },
+        "required": { "type": "boolean" },
+        "cardinality": {
+          "type": "string",
+          "description": "'1'・'0..1'・'1..*' のような多重度表現。",
+          "pattern": "^[0-9]+(\\.\\.([0-9]+|\\*))?$"
+        },
+        "semantic_key": { "type": ["string", "null"] },
+        "identity_policy": {
+          "anyOf": [{ "$ref": "#/$defs/identity_policy" }, { "type": "null" }]
+        },
+        "validation_rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/validation_rule" }
+        },
+        "elabftw_binding": {
+          "anyOf": [{ "$ref": "#/$defs/elabftw_binding" }, { "type": "null" }]
+        }
+      }
+    }
+  }
+}

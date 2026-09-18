@@ -25,11 +25,14 @@ MaiML2eLabFTW/
 │   │   └── override.py          #   Step順序YAMLの明示的な上書き読み込み
 │   ├── planning/
 │   │   └── planner.py           #   TemplatePlanner（method+StepPlan -> TemplatePlan）
+│   ├── contract/                 #   TemplateContract（Phase 1: docs/template_contract_design.md）
+│   │   ├── model.py              #     CaptureSource/IdentityPolicy/CaptureRequirement/TemplateContract
+│   │   └── loader.py             #     load_template_contract（YAML読込 + schema検証 + 重複id検出）
 │   ├── resources/                #   maiml_metadata.schema.json等、パッケージ同梱の変換マッピング
 │   └── cli.py                    #   CLI入口（まだ未実装のスキャフォールドのみ）
 ├── tests/                         # 上記の各モジュールに対応する単体・結合テスト
-├── schemas/                       # 開発者向けのスキーマ（step_order/type_mapping等）
-├── docs/                          # 設計ドキュメント（protocol_model_design.md等）
+├── schemas/                       # 開発者向けのスキーマ（step_order/type_mapping/template_contract等）
+├── docs/                          # 設計ドキュメント（protocol_model_design.md/template_contract_design.md等）
 ├── localtests/                    # 実サーバー疎通用ローカルスクリプト（.gitignore対象、リポジトリには含まれない）
 └── pyproject.toml
 ```
@@ -71,6 +74,12 @@ MaiML2eLabFTW/
   作成IDは`201`の`Location`ヘッダーから取得、404/409/422/429/5xxを別例外に区別、
   429と一時的な5xxのみ限定的に再試行、POSTと添付アップロードは無条件では再試行しない、
   TLS検証は標準で有効・`verify=False`の簡易な入口は用意しない)
+- `maiml2elabftw.contract`（`docs/template_contract_design.md`のPhase 1
+  「Contract基盤」。`CaptureSource`・`IdentityPolicy`・`ValidationRule`・
+  `ElabftwBinding`・`CaptureRequirement`・`TemplateContract`のデータモデルと、
+  YAMLファイルから`template_contract.schema.json`によるschema検証つきで
+  読み込む`load_template_contract`。まだ`TemplatePlanner`や`ElabftwTemplateWriter`
+  への結線・完全性検証(Phase 5)は行っていない、モデルとローダーのみの段階)
 
 insertionの`<uri>`がネットワークスキーム(`http://`等)を持たない相対/絶対パスで、
 かつ.maimlファイルと同じディレクトリ基準で実在するファイルを指している場合は、
