@@ -3,6 +3,37 @@
 MaiML `protocolFileRootType`からeLabFTW Experiment Templateを生成するための
 非公式Pythonツールです。
 
+## ディレクトリ構成
+
+```
+MaiML2eLabFTW/
+├── src/maiml2elabftw/
+│   ├── core/                    # eLabFTW非依存のドメインモデル
+│   │   ├── models.py            #   ProtocolDocumentModel/StepPlan/TemplatePlan等のdataclass一式
+│   │   └── errors.py            #   ErrorCode・ConversionError（変換失敗の唯一の例外型）
+│   ├── adapters/
+│   │   ├── maiml/
+│   │   │   └── reader.py        #   protocolFileRootType XML -> ドメインモデル（ProtocolReader）
+│   │   └── elabftw/             #   eLabFTW REST APIへの書き込み側一式
+│   │       ├── client.py        #     ElabftwClient（Protocol定義。実装はHttpElabftwClient）
+│   │       ├── http_client.py   #     httpx実装。metadata文字列化・重複検出のページング等
+│   │       ├── duplicate.py     #     DuplicateDetector（document_uuid+method_uuidでの重複判定）
+│   │       ├── metadata_bundle.py #   eLabFTW metadataの薄いbundleとmaiml-metadata.json添付の生成
+│   │       └── writer.py        #     ElabftwTemplateWriter（作成〜補償削除までのオーケストレーション）
+│   ├── ordering/
+│   │   ├── resolver.py          #   PnmlOrderResolver（PNMLの単純直列順序の検証・解決）
+│   │   └── override.py          #   Step順序YAMLの明示的な上書き読み込み
+│   ├── planning/
+│   │   └── planner.py           #   TemplatePlanner（method+StepPlan -> TemplatePlan）
+│   ├── resources/                #   maiml_metadata.schema.json等、パッケージ同梱の変換マッピング
+│   └── cli.py                    #   CLI入口（まだ未実装のスキャフォールドのみ）
+├── tests/                         # 上記の各モジュールに対応する単体・結合テスト
+├── schemas/                       # 開発者向けのスキーマ（step_order/type_mapping等）
+├── docs/                          # 設計ドキュメント（protocol_model_design.md等）
+├── localtests/                    # 実サーバー疎通用ローカルスクリプト（.gitignore対象、リポジトリには含まれない）
+└── pyproject.toml
+```
+
 ## 現在の実装範囲
 
 - method単位の中間モデル
