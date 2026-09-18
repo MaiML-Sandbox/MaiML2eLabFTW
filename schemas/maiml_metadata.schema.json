@@ -445,6 +445,38 @@
         }
       }
     },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement_id", "maiml_target", "source", "required", "cardinality", "identity_policy", "identity_policy_choices"],
+      "properties": {
+        "requirement_id": {"$ref": "#/$defs/identifier"},
+        "maiml_target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "enum": ["protocol", "eln_system", "user_input", "user_selection", "attachment", "generated", "reused_identity", "derived"]
+        },
+        "required": {"type": "boolean"},
+        "cardinality": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.\\.([0-9]+|\\*))?$"
+        },
+        "identity_policy": {
+          "oneOf": [
+            {"enum": ["generate_new", "reuse_existing", "reference_protocol_entity", "reuse_previous_result"]},
+            {"type": "null"}
+          ]
+        },
+        "identity_policy_choices": {
+          "type": "array",
+          "items": {
+            "enum": ["generate_new", "reuse_existing", "reference_protocol_entity", "reuse_previous_result"]
+          }
+        }
+      }
+    },
     "conversionSummary": {
       "type": "object",
       "additionalProperties": false,
@@ -468,6 +500,7 @@
         "attachments",
         "references",
         "parties",
+        "entities",
         "conversion_summary"
       ],
       "properties": {
@@ -498,6 +531,10 @@
         "parties": {
           "type": "array",
           "items": {"$ref": "#/$defs/party"}
+        },
+        "entities": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/entity"}
         },
         "attachments": {
           "type": "array",

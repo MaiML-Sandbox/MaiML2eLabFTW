@@ -26,9 +26,11 @@ MaiML2eLabFTW/
 │   │   └── override.py          #   Step順序YAMLの明示的な上書き読み込み
 │   ├── planning/
 │   │   └── planner.py           #   TemplatePlanner（method+StepPlan -> TemplatePlan）
-│   ├── contract/                 #   TemplateContract（Phase 1: docs/template_contract_design.md）
-│   │   ├── model.py              #     CaptureSource/IdentityPolicy/CaptureRequirement/TemplateContract
-│   │   └── loader.py             #     load_template_contract（YAML読込 + schema検証 + 重複id検出）
+│   ├── contract/                 #   TemplateContract（docs/template_contract_design.md）
+│   │   ├── model.py              #     CaptureSource/IdentityPolicy/CaptureRequirement/TemplateContract (Phase 1)
+│   │   ├── loader.py             #     load_template_contract（YAML読込 + schema検証 + 重複id検出。Phase 1）
+│   │   └── entities.py           #     derive_entity_requirements/identity_name_collisions（Phase 3。
+│   │                             #     Material/Condition/ResultのUUID/identity_policy導出）
 │   ├── resources/                #   maiml_metadata.schema.json等、パッケージ同梱の変換マッピング
 │   └── cli.py                    #   CLI入口（まだ未実装のスキャフォールドのみ）
 ├── tests/                         # 上記の各モジュールに対応する単体・結合テスト
@@ -114,6 +116,36 @@ MaiML2eLabFTW/
     (`MaiML2eLabFTW`)ではeLabFTW側の実システム情報を参照する理由がなく、
     design doc自身が対象プロジェクトとして挙げている逆変換側
     (`elabftw2MaiML`)の関心事であるため
+- `docs/template_contract_design.md`のPhase 3「実体とUUID」
+  （Material/Condition/Resultの実体モデルと、UUID新規発行/既存UUID再利用/
+  前工程Result参照の識別、同一性競合の検出）:
+  - `maiml2elabftw.contract.derive_entity_requirements(method)`が
+    materialTemplate/conditionTemplate/resultTemplateの1つずつに対して
+    `CaptureRequirement`（Phase 1のモデル）を1件ずつ導出する。判定順序は
+    次の通り: (1)他のTemplateの`templateRef`から参照されている場合は
+    Protocol自身の構造でidentityが既に確定しているとみなし
+    `identity_policy=reference_protocol_entity` / `source=protocol`、
+    (2)そうでなくrole=resultの場合はmethod実行ごとに新しく生成される実体
+    として`identity_policy=generate_new` / `source=generated`、
+    (3)それ以外（参照されていないmaterial/conditionTemplate）はProtocol
+    単体では出自（新規試料・既存Material・前工程Result）を決定できないため
+    `identity_policy=None`のまま、design doc 7.2節のUI例そのままの3択
+    （`generate_new`/`reuse_existing`/`reuse_previous_result`）を
+    `ValidationRule`として保持し、記録時にユーザーが選択する
+    (`source=user_selection`)
+  - `identity_choices(requirement)`が上記(3)の3択（未確定の場合のみ）を
+    取り出すヘルパー
+  - `identity_name_collisions(method)`が、(3)のように出自未確定なTemplate
+    同士が同じ`<name>`を持つ場合を検出する。7.2節末尾の警告
+    （名称一致だけでUUID再利用を決定してはならない）どおり、名前が一致して
+    いても`derive_entity_requirements`側の判定は一切変えない（=絶対に
+    マージしない）。検出結果はwarningとして可視化するだけで、変換自体は
+    止めない
+  - `TemplatePlanner.build`がこれらをそれぞれ`metadata["maiml"]["entities"]`
+    （requirement_id/maiml_target/source/identity_policy/
+    identity_policy_choicesを1件ずつ）と`conversion_warnings`の
+    `IDENTITY_NAME_COLLISION_NOT_MERGED`として書き出す。件数は
+    `conversion_summary.preserved_as_metadata`にも加算される
 
 insertionの`<uri>`がネットワークスキーム(`http://`等)を持たない相対/絶対パスで、
 かつ.maimlファイルと同じディレクトリ基準で実在するファイルを指している場合は、

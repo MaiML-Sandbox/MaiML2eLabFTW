@@ -9,6 +9,7 @@ from typing import Any
 import jsonschema
 import yaml
 
+from ..contract import CaptureRequirement, derive_entity_requirements, identity_choices, identity_name_collisions
 from ..core.errors import ConversionError, ErrorCode
 from ..core.models import (
     AttachmentDefinition,
@@ -101,17 +102,21 @@ class TemplatePlanner:
         attachment_metadata = [self._attachment_to_metadata(item) for item in attachments]
         reference_metadata = self._build_reference_metadata(method)
         party_metadata = [self._party_to_metadata(item) for item in document.parties]
+        entity_requirements = derive_entity_requirements(method)
+        entity_metadata = [self._entity_to_metadata(item) for item in entity_requirements]
 
         attachment_warnings = [
             warning for attachment in attachments for warning in self._attachment_warnings(attachment)
         ]
-        warnings = field_warnings + attachment_warnings
+        identity_warnings = list(identity_name_collisions(method))
+        warnings = field_warnings + attachment_warnings + identity_warnings
 
         conversion_summary = {
             "mapped": len(fields) + len(steps.steps),
             "preserved_as_metadata": len(reference_metadata)
             + sum(len(graph.places) + len(graph.transitions) + len(graph.arcs) for graph in method.pnml_graphs)
-            + len(party_metadata),
+            + len(party_metadata)
+            + len(entity_metadata),
             "attached": len(attachments),
             "warnings": len(warnings),
         }
@@ -134,6 +139,7 @@ class TemplatePlanner:
                 "attachments": attachment_metadata,
                 "references": reference_metadata,
                 "parties": party_metadata,
+                "entities": entity_metadata,
                 "conversion_summary": conversion_summary,
             },
             # Detailed warning entries are kept outside "maiml" (the schema only
@@ -467,6 +473,25 @@ class TemplatePlanner:
             "instrument_refs": [
                 {"id": item.ref_id, "ref": item.target_id} for item in party.instrument_refs
             ],
+        }
+
+    @staticmethod
+    def _entity_to_metadata(requirement: CaptureRequirement) -> dict[str, Any]:
+        # See contract.entities.derive_entity_requirements for how each
+        # Material/Condition/Result Template's identity_policy is decided
+        # (design doc section 7, "UUIDと実体の同一性"). "identity_policy_choices"
+        # is only ever non-empty when identity_policy is still None - the
+        # Protocol could not fix this entity's origin on its own, so the
+        # candidates that must be chosen from at record time are surfaced
+        # here instead.
+        return {
+            "requirement_id": requirement.requirement_id,
+            "maiml_target": requirement.maiml_target,
+            "source": requirement.source.value,
+            "required": requirement.required,
+            "cardinality": requirement.cardinality,
+            "identity_policy": requirement.identity_policy.value if requirement.identity_policy else None,
+            "identity_policy_choices": list(identity_choices(requirement)),
         }
 
     def _build_reference_metadata(self, method: MethodProtocolModel) -> list[dict[str, Any]]:

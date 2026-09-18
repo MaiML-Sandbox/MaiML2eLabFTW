@@ -263,6 +263,63 @@ class TemplatePlannerTests(unittest.TestCase):
             len(document.parties),
         )
 
+    def test_entity_metadata_covers_every_material_condition_and_result_template(self) -> None:
+        document = self._read()
+        method = document.methods[0]
+        steps = PnmlOrderResolver().resolve(method)
+        plan = TemplatePlanner().build(document, method, steps)
+
+        entities = {item["requirement_id"]: item for item in plan.metadata["maiml"]["entities"]}
+        self.assertEqual(set(entities), {"entity:material-1", "entity:condition-1", "entity:result-1"})
+
+        material = entities["entity:material-1"]
+        self.assertEqual(material["identity_policy"], "reference_protocol_entity")
+        self.assertEqual(material["identity_policy_choices"], [])
+
+        result = entities["entity:result-1"]
+        self.assertEqual(result["identity_policy"], "generate_new")
+
+        condition = entities["entity:condition-1"]
+        self.assertIsNone(condition["identity_policy"])
+        self.assertEqual(
+            condition["identity_policy_choices"], ["generate_new", "reuse_existing", "reuse_previous_result"]
+        )
+
+    def test_entity_metadata_is_counted_as_preserved_in_conversion_summary(self) -> None:
+        document = self._read()
+        method = document.methods[0]
+        steps = PnmlOrderResolver().resolve(method)
+        plan = TemplatePlanner().build(document, method, steps)
+
+        self.assertEqual(
+            len(plan.metadata["maiml"]["entities"]),
+            3,
+        )
+        self.assertGreaterEqual(plan.metadata["maiml"]["conversion_summary"]["preserved_as_metadata"], 3)
+
+    def test_identity_name_collision_is_surfaced_as_a_conversion_warning(self) -> None:
+        xml = PROTOCOL_XML.replace(
+            '<conditionTemplate id="condition-1">\n        <uuid>77777777-7777-4777-8777-777777777772</uuid>',
+            '<conditionTemplate id="condition-1">\n        <uuid>77777777-7777-4777-8777-777777777772</uuid>'
+            "\n        <name>SharedName</name>",
+        ).replace(
+            "</conditionTemplate>",
+            "</conditionTemplate>\n      "
+            '<conditionTemplate id="condition-2">'
+            "<uuid>77777777-7777-4777-8777-777777777774</uuid><name>SharedName</name></conditionTemplate>",
+        )
+        document = self._read(xml)
+        method = document.methods[0]
+        steps = PnmlOrderResolver().resolve(method)
+        plan = TemplatePlanner().build(document, method, steps)
+
+        codes = [item["code"] for item in plan.metadata["conversion_warnings"]]
+        self.assertIn("IDENTITY_NAME_COLLISION_NOT_MERGED", codes)
+        self.assertEqual(
+            plan.metadata["maiml"]["conversion_summary"]["warnings"],
+            len(plan.metadata["conversion_warnings"]),
+        )
+
     def test_custom_field_description_is_carried_onto_the_plan(self) -> None:
         xml = PROTOCOL_XML.replace(
             '<property key="AcceleratingVoltage" xsi:type="doubleType" units="kV" '

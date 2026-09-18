@@ -2,6 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+from maiml2elabftw.adapters.maiml import ProtocolReader
 from maiml2elabftw.contract import (
     CaptureRequirement,
     CaptureSource,
@@ -9,9 +10,14 @@ from maiml2elabftw.contract import (
     IdentityPolicy,
     TemplateContract,
     ValidationRule,
+    derive_entity_requirements,
+    identity_choices,
+    identity_name_collisions,
     load_template_contract,
 )
 from maiml2elabftw.core.errors import ConversionError, ErrorCode
+
+from test_reader import XML as PROTOCOL_XML
 
 
 VALID_YAML = """
@@ -153,6 +159,117 @@ class TemplateContractModelTests(unittest.TestCase):
         self.assertEqual(contract.requirement("r1"), requirement)
         with self.assertRaises(AttributeError):
             contract.document_uuid = "changed"  # frozen
+
+
+class DeriveEntityRequirementsTests(unittest.TestCase):
+    """Phase 3 ("実体とUUID"): entity/UUID identity requirements derived
+    straight from a parsed Protocol's Material/Condition/Result Templates.
+    """
+
+    def _read(self, xml: str = PROTOCOL_XML):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "protocol.maiml"
+        path.write_text(xml, encoding="utf-8")
+        return ProtocolReader().read(path)
+
+    def test_template_referenced_by_a_templateref_gets_a_fixed_identity(self) -> None:
+        # condition-1 carries <templateRef ref="material-1"/>, so
+        # material-1's identity is already fixed by the Protocol's own
+        # structure - no choice is left to whoever records the experiment.
+        method = self._read().methods[0]
+        requirements = {item.requirement_id: item for item in derive_entity_requirements(method)}
+
+        material = requirements["entity:material-1"]
+        self.assertEqual(material.maiml_target, "materialTemplate/material-1")
+        self.assertEqual(material.source, CaptureSource.PROTOCOL)
+        self.assertEqual(material.identity_policy, IdentityPolicy.REFERENCE_PROTOCOL_ENTITY)
+        self.assertEqual(identity_choices(material), ())
+
+    def test_result_template_is_always_generated_fresh(self) -> None:
+        method = self._read().methods[0]
+        requirements = {item.requirement_id: item for item in derive_entity_requirements(method)}
+
+        result = requirements["entity:result-1"]
+        self.assertEqual(result.maiml_target, "resultTemplate/result-1")
+        self.assertEqual(result.source, CaptureSource.GENERATED)
+        self.assertEqual(result.identity_policy, IdentityPolicy.GENERATE_NEW)
+        self.assertEqual(identity_choices(result), ())
+
+    def test_unreferenced_condition_leaves_identity_to_be_chosen_at_record_time(self) -> None:
+        # condition-1 is not itself the target of any templateRef and is
+        # not a resultTemplate, so the Protocol alone cannot say whether
+        # it is a new sample, an existing Material, or a previous Result -
+        # design doc section 7.2's own three-choice UI mockup.
+        method = self._read().methods[0]
+        requirements = {item.requirement_id: item for item in derive_entity_requirements(method)}
+
+        condition = requirements["entity:condition-1"]
+        self.assertEqual(condition.source, CaptureSource.USER_SELECTION)
+        self.assertIsNone(condition.identity_policy)
+        self.assertEqual(
+            identity_choices(condition),
+            (
+                IdentityPolicy.GENERATE_NEW.value,
+                IdentityPolicy.REUSE_EXISTING.value,
+                IdentityPolicy.REUSE_PREVIOUS_RESULT.value,
+            ),
+        )
+
+    def test_one_requirement_per_material_condition_and_result_template(self) -> None:
+        method = self._read().methods[0]
+        requirements = derive_entity_requirements(method)
+        self.assertEqual(
+            {item.requirement_id for item in requirements},
+            {"entity:material-1", "entity:condition-1", "entity:result-1"},
+        )
+
+    def test_a_shared_name_between_two_unresolved_templates_is_flagged_but_never_merged(self) -> None:
+        # Two conditionTemplates that are both left to be chosen at record
+        # time (neither is templateRef'd) and happen to share a <name> -
+        # design doc section 7.2's closing warning: a name match alone must
+        # never decide identity, but it also must not pass unnoticed.
+        xml = PROTOCOL_XML.replace(
+            '<conditionTemplate id="condition-1">\n        <uuid>77777777-7777-4777-8777-777777777772</uuid>',
+            '<conditionTemplate id="condition-1">\n        <uuid>77777777-7777-4777-8777-777777777772</uuid>'
+            "\n        <name>SharedName</name>",
+        ).replace(
+            "</conditionTemplate>",
+            "</conditionTemplate>\n      "
+            '<conditionTemplate id="condition-2">'
+            "<uuid>77777777-7777-4777-8777-777777777774</uuid><name>SharedName</name></conditionTemplate>",
+        )
+        method = self._read(xml).methods[0]
+
+        collisions = identity_name_collisions(method)
+        self.assertEqual(len(collisions), 1)
+        self.assertEqual(collisions[0]["code"], "IDENTITY_NAME_COLLISION_NOT_MERGED")
+        self.assertEqual(collisions[0]["name"], "SharedName")
+        self.assertEqual(collisions[0]["template_ids"], ["condition-1", "condition-2"])
+
+        # Flagging the coincidence must not change what each entity's own
+        # identity requirement looks like - they stay two distinct,
+        # independently-unresolved requirements.
+        requirements = {item.requirement_id: item for item in derive_entity_requirements(method)}
+        self.assertIsNone(requirements["entity:condition-1"].identity_policy)
+        self.assertIsNone(requirements["entity:condition-2"].identity_policy)
+
+    def test_result_templates_sharing_a_name_are_not_flagged(self) -> None:
+        # RESULT-role templates are always GENERATE_NEW regardless of name,
+        # so two of them sharing a name is not the kind of ambiguity
+        # identity_name_collisions exists to surface.
+        xml = PROTOCOL_XML.replace(
+            '<resultTemplate id="result-1">\n          <uuid>77777777-7777-4777-8777-777777777773</uuid>',
+            '<resultTemplate id="result-1">\n          <uuid>77777777-7777-4777-8777-777777777773</uuid>'
+            "\n          <name>SameResultName</name>",
+        ).replace(
+            "</resultTemplate>",
+            "</resultTemplate>\n        "
+            '<resultTemplate id="result-2">'
+            "<uuid>77777777-7777-4777-8777-777777777775</uuid><name>SameResultName</name></resultTemplate>",
+        )
+        method = self._read(xml).methods[0]
+        self.assertEqual(identity_name_collisions(method), ())
 
 
 if __name__ == "__main__":
