@@ -18,11 +18,14 @@ from ...core.models import (
     FieldType,
     InstructionDefinition,
     MethodProtocolModel,
+    PartyDefinition,
+    PartyReference,
     PlaceNode,
     PlaceRefDefinition,
     PnmlGraph,
     ProgramDefinition,
     ProtocolDocumentModel,
+    RawDataItem,
     SourceIdentity,
     SourceRef,
     TemplateDefinition,
@@ -67,9 +70,11 @@ class ProtocolReader:
         source_hash = sha256(path.read_bytes()).hexdigest()
         protocol_name = self._child_text(protocol, "name")
         shared_templates = self._parse_templates(protocol, "protocol")
+        parties, party_attachments = self._parse_parties(document, path.parent)
         common_attachments = tuple(
             self._parse_insertions(document, document.get("id", "document"), path.parent)
             + self._parse_insertions(protocol, protocol.get("id", "protocol"), path.parent)
+            + party_attachments
         )
         methods = tuple(
             self._parse_method(
@@ -103,6 +108,7 @@ class ProtocolReader:
             protocol_description=self._child_text(protocol, "description"),
             protocol_annotation=self._child_text(protocol, "annotation"),
             features=root.get("features"),
+            parties=parties,
         )
 
     def _parse_method(
@@ -366,6 +372,103 @@ class ProtocolReader:
         if strategy == "date_part":
             return value[:10]
         return value
+
+    _PARTY_ELEMENTS: tuple[tuple[str, str], ...] = (
+        ("creator", "creator"),
+        ("vendor", "vendor"),
+        ("owner", "owner"),
+        ("instrument", "instrument"),
+    )
+
+    def _parse_parties(
+        self, document: ET.Element, base_dir: Path | None
+    ) -> tuple[tuple[PartyDefinition, ...], list[AttachmentDefinition]]:
+        """Parse ``document``'s creator/vendor/owner/instrument entries
+        (design doc section 5). Every document has at least one creator,
+        vendor and owner (required by the MaiML XSD); ``instrument`` is
+        optional (0 or more).
+
+        None of these become a Custom Field - see ``PartyDefinition`` -
+        so their property/content children are captured as plain
+        ``RawDataItem`` metadata rather than run through the
+        type-mapping table ``_parse_field`` uses. Their insertions go
+        through the same ``_parse_insertions`` every other element uses,
+        so they upload exactly like any other attachment; only the
+        parsed ``PartyDefinition`` objects need to be returned separately
+        for the reference checks and metadata this enables.
+        """
+        parties: list[PartyDefinition] = []
+        attachments: list[AttachmentDefinition] = []
+        for element_name, element_kind in self._PARTY_ELEMENTS:
+            for node in document.findall(Q(element_name)):
+                party_id = self._required_attr(node, "id")
+                vendor_refs = tuple(self._parse_party_ref(item) for item in node.findall(Q("vendorRef")))
+                instrument_refs = tuple(self._parse_party_ref(item) for item in node.findall(Q("instrumentRef")))
+                parties.append(
+                    PartyDefinition(
+                        element_kind=element_kind,
+                        party_id=party_id,
+                        source_ref=SourceRef(element_name, party_id),
+                        uuid=self._child_text(node, "uuid"),
+                        name=self._child_text(node, "name"),
+                        description=self._child_text(node, "description"),
+                        annotation=self._child_text(node, "annotation"),
+                        data_items=self._parse_data_items(node),
+                        vendor_refs=vendor_refs,
+                        instrument_refs=instrument_refs,
+                    )
+                )
+                attachments.extend(self._parse_insertions(node, party_id, base_dir))
+
+        vendor_ids = {item.party_id for item in parties if item.element_kind == "vendor"}
+        instrument_ids = {item.party_id for item in parties if item.element_kind == "instrument"}
+        for party in parties:
+            if party.element_kind != "creator":
+                continue
+            self._ensure_refs(
+                tuple(item.target_id for item in party.vendor_refs), vendor_ids, "vendorRef", party.party_id
+            )
+            self._ensure_refs(
+                tuple(item.target_id for item in party.instrument_refs),
+                instrument_ids,
+                "instrumentRef",
+                party.party_id,
+            )
+        return tuple(parties), attachments
+
+    def _parse_party_ref(self, node: ET.Element) -> PartyReference:
+        ref_id = self._required_attr(node, "id")
+        target_id = self._required_attr(node, "ref")
+        return PartyReference(
+            ref_id=ref_id,
+            target_id=target_id,
+            source_ref=SourceRef(node.tag.split("}")[-1], ref_id),
+        )
+
+    def _parse_data_items(self, node: ET.Element) -> tuple[RawDataItem, ...]:
+        # Property/content children of creator/vendor/owner/instrument are
+        # never destined for a Custom Field, so unlike _parse_field this
+        # never rejects an unrecognised xsi:type - it just keeps whatever
+        # is there as metadata (design doc section 5.3's "properties"/
+        # "contents" arrays).
+        items: list[RawDataItem] = []
+        for source_kind in (FieldSourceKind.PROPERTY, FieldSourceKind.CONTENT):
+            for field_node in node.findall(Q(source_kind.value)):
+                key = self._required_attr(field_node, "key")
+                xsi_type = field_node.get(f"{{{XSI}}}type", "").split(":")[-1] or None
+                raw_values = tuple((item.text or "") for item in field_node.findall(Q("value")))
+                items.append(
+                    RawDataItem(
+                        key=key,
+                        source_kind=source_kind,
+                        xsi_type=xsi_type,
+                        raw_values=raw_values,
+                        unit=field_node.get("units"),
+                        description=self._child_text(field_node, "description"),
+                        source_ref=SourceRef(source_kind.value, key),
+                    )
+                )
+        return tuple(items)
 
     def _parse_insertions(
         self, parent: ET.Element, owner_id: str, base_dir: Path | None = None

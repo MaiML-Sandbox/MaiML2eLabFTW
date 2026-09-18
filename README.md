@@ -9,11 +9,12 @@ MaiML `protocolFileRootType`からeLabFTW Experiment Templateを生成するた�
 MaiML2eLabFTW/
 ├── src/maiml2elabftw/
 │   ├── core/                    # eLabFTW非依存のドメインモデル
-│   │   ├── models.py            #   ProtocolDocumentModel/StepPlan/TemplatePlan等のdataclass一式
+│   │   ├── models.py            #   ProtocolDocumentModel/StepPlan/TemplatePlan/PartyDefinition等のdataclass一式
 │   │   └── errors.py            #   ErrorCode・ConversionError（変換失敗の唯一の例外型）
 │   ├── adapters/
 │   │   ├── maiml/
-│   │   │   └── reader.py        #   protocolFileRootType XML -> ドメインモデル（ProtocolReader）
+│   │   │   └── reader.py        #   protocolFileRootType XML -> ドメインモデル（ProtocolReader。
+│   │   │                        #   creator/vendor/owner/instrumentのparty解析を含む）
 │   │   └── elabftw/             #   eLabFTW REST APIへの書き込み側一式
 │   │       ├── client.py        #     ElabftwClient（Protocol定義。実装はHttpElabftwClient）
 │   │       ├── http_client.py   #     httpx実装。metadata文字列化・重複検出のページング等
@@ -80,6 +81,39 @@ MaiML2eLabFTW/
   YAMLファイルから`template_contract.schema.json`によるschema検証つきで
   読み込む`load_template_contract`。まだ`TemplatePlanner`や`ElabftwTemplateWriter`
   への結線・完全性検証(Phase 5)は行っていない、モデルとローダーのみの段階)
+- `docs/template_contract_design.md`のPhase 2「基本情報」
+  （document/creator/vendor/owner/instrument、Main Textの見出し構成、
+  Custom Fieldへのdescription転送）:
+  - `ProtocolReader._parse_parties`が`document`直下の`creator`(1+)・
+    `vendor`(1+)・`owner`(1+)・`instrument`(0+)を`PartyDefinition`として
+    解析する。いずれもCustom Fieldにはならず、property/content値は
+    `RawDataItem`としてそのままmetadata専用に保持される。`creator`が持つ
+    `vendorRef`/`instrumentRef`は該当する`vendor`/`instrument`のidへの
+    参照として検証され、迷子参照は既存の`ErrorCode.BROKEN_REFERENCE`で
+    拒否される
+  - `TemplatePlanner._build_main_text`がTemplateのMain Textを見出しつきの
+    セクションに再構成する（`## 文書情報`=document/description、
+    `## プロトコル概要`=protocol/description、`## 手法概要`=method/description、
+    `## 装置情報`=document直下のinstrument一覧、`## プログラム`=programごとの
+    `### {program.title}` + description）。元のdescriptionが無いセクションは
+    見出し自体を出力しない（空見出しの量産を避ける）。document直下の
+    instrumentはあくまで文書レベルの定義であり、当該methodが実際に使った
+    装置であると確定できないため、常に中立な「装置情報」として書き、
+    「使用装置」と断定する見出しにはしない
+  - `TemplatePlanner._party_to_metadata`がparty 1件ごとの
+    id/uuid/name/description/annotation/data_items/vendor_refs/instrument_refsを
+    `metadata["maiml"]["parties"]`（kind=creator/vendor/owner/instrumentの
+    フラットな配列）として書き出す。件数は`conversion_summary.preserved_as_metadata`
+    にも加算される
+  - property/contentの`description`が`CustomFieldPlan.description`経由で
+    `metadata_bundle.build_metadata_bundle`の`extra_fields[label].description`
+    まで転送される（design doc 6節「property/contentのdescription ->
+    Custom Fieldのdescription」）
+  - スコープ外: 「eLabFTWシステム情報とのbinding」(design doc Phase 2の
+    項目4)はこのリポジトリの対象外と判断した。MaiML→eLabFTWの一方向変換
+    (`MaiML2eLabFTW`)ではeLabFTW側の実システム情報を参照する理由がなく、
+    design doc自身が対象プロジェクトとして挙げている逆変換側
+    (`elabftw2MaiML`)の関心事であるため
 
 insertionの`<uri>`がネットワークスキーム(`http://`等)を持たない相対/絶対パスで、
 かつ.maimlファイルと同じディレクトリ基準で実在するファイルを指している場合は、

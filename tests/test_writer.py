@@ -173,6 +173,27 @@ class ElabftwTemplateWriterTests(unittest.TestCase):
             [{"id": 1, "name": "MATERIAL"}, {"id": 2, "name": "CONDITION"}, {"id": 3, "name": "RESULT"}],
         )
 
+    def test_extra_fields_carry_the_source_propertys_description(self) -> None:
+        # design doc section 6: "property/contentのdescription -> Custom
+        # Fieldのdescription". Fields with no <description> in the source
+        # (the common case) must still get an explicit "" rather than the
+        # key being absent, so every extra_fields entry has the same shape.
+        xml = PROTOCOL_XML.replace(
+            '<property key="AcceleratingVoltage" xsi:type="doubleType" units="kV" '
+            'formatString="0.0" scaleFactor="1.0"><value>200</value></property>',
+            '<property key="AcceleratingVoltage" xsi:type="doubleType" units="kV" '
+            'formatString="0.0" scaleFactor="1.0"><description>Beam accelerating voltage.</description>'
+            "<value>200</value></property>",
+        )
+        plan = self._build_plan(xml)
+        bundle = build_metadata_bundle(plan)
+
+        voltage = bundle["extra_fields"]["AcceleratingVoltage [kV]"]
+        self.assertEqual(voltage["description"], "Beam accelerating voltage.")
+
+        sample_id = bundle["extra_fields"]["SampleID"]
+        self.assertEqual(sample_id["description"], "")
+
     def test_duplicate_source_is_rejected_and_nothing_is_created(self) -> None:
         plan = self._build_plan()
         client = FakeElabftwClient(duplicate_id=42)

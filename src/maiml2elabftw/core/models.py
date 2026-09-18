@@ -164,6 +164,62 @@ class ProgramDefinition:
 
 
 @dataclass(frozen=True)
+class RawDataItem:
+    """One property/content value kept as plain metadata rather than
+    converted into a Custom Field.
+
+    Used for creator/vendor/owner/instrument (see ``PartyDefinition``):
+    none of those map onto a MATERIAL/CONDITION/RESULT Custom Field, so
+    their property/content children are preserved for round-tripping only
+    (design doc section 5, "instrument") rather than going through the
+    type-mapping table ``_parse_field`` uses for template fields.
+    """
+
+    key: str
+    source_kind: FieldSourceKind
+    xsi_type: str | None
+    raw_values: tuple[str, ...]
+    unit: str | None = None
+    description: str | None = None
+    source_ref: SourceRef | None = None
+
+
+@dataclass(frozen=True)
+class PartyReference:
+    """One ``vendorRef``/``instrumentRef`` inside a ``creator`` element."""
+
+    ref_id: str
+    target_id: str
+    source_ref: SourceRef | None = None
+
+
+@dataclass(frozen=True)
+class PartyDefinition:
+    """A document-level ``creator``/``vendor``/``owner``/``instrument``
+    entry (design doc section 5).
+
+    Every document has at least one creator, vendor and owner (required by
+    the MaiML XSD); ``instrument`` is optional. None of these ever become
+    a Custom Field. Only ``instrument`` surfaces in Main Text (as "装置情報"
+    - design doc section 5.2); everything - id, uuid, property/content
+    values, and which vendor/instrument a creator references - is kept for
+    round-tripping in metadata (``metadata_bundle`` / the design's
+    ``maiml.parties`` shape) instead.
+    """
+
+    element_kind: Literal["creator", "vendor", "owner", "instrument"]
+    party_id: str
+    source_ref: SourceRef
+    uuid: str | None = None
+    name: str | None = None
+    description: str | None = None
+    annotation: str | None = None
+    data_items: tuple[RawDataItem, ...] = ()
+    vendor_refs: tuple[PartyReference, ...] = ()
+    instrument_refs: tuple[PartyReference, ...] = ()
+
+
+@dataclass(frozen=True)
 class AttachmentDefinition:
     attachment_id: str
     name: str
@@ -218,6 +274,7 @@ class ProtocolDocumentModel:
     protocol_description: str | None = None
     protocol_annotation: str | None = None
     features: str | None = None
+    parties: tuple[PartyDefinition, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -245,6 +302,7 @@ class CustomFieldPlan:
     required: bool
     value: Any | None
     metadata: dict[str, Any]
+    description: str | None = None
 
 
 @dataclass(frozen=True)

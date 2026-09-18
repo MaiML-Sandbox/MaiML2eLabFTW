@@ -4,7 +4,7 @@ import unittest
 
 from maiml2elabftw.adapters.maiml import ProtocolReader
 from maiml2elabftw.core.errors import ConversionError, ErrorCode
-from maiml2elabftw.core.models import FieldType, TemplateRole
+from maiml2elabftw.core.models import FieldSourceKind, FieldType, TemplateRole
 from maiml2elabftw.ordering import PnmlOrderResolver
 
 
@@ -18,9 +18,20 @@ XML = """<?xml version="1.0" encoding="UTF-8"?>
       <uri>attachment.txt</uri>
       <hash>YWJjMTIz</hash>
     </insertion>
-    <creator id="creator-1"><uuid>11111111-1111-4111-8111-111111111112</uuid><vendorRef id="vr-1" ref="vendor-1"/></creator>
+    <creator id="creator-1">
+      <uuid>11111111-1111-4111-8111-111111111112</uuid>
+      <name>KYL:SEM</name>
+      <vendorRef id="vr-1" ref="vendor-1"/>
+      <instrumentRef id="ir-1" ref="instrument-1"/>
+    </creator>
     <vendor id="vendor-1"><uuid>11111111-1111-4111-8111-111111111113</uuid></vendor>
     <owner id="owner-1"><uuid>11111111-1111-4111-8111-111111111114</uuid></owner>
+    <instrument id="instrument-1">
+      <uuid>11111111-1111-4111-8111-111111111115</uuid>
+      <name>JEOL-SEM</name>
+      <description>Scanning electron microscope.</description>
+      <property key="SerialNumber" xsi:type="stringType"><value>SN-001</value></property>
+    </instrument>
     <date>2026-09-17T00:00:00Z</date>
   </document>
   <protocol id="protocol-1">
@@ -235,3 +246,42 @@ class ProtocolReaderTests(unittest.TestCase):
         attrs = dict(voltage.source_attributes)
         self.assertEqual(attrs["formatString"], "0.0")
         self.assertEqual(attrs["scaleFactor"], "1.0")
+
+    def test_parses_creator_vendor_owner_and_instrument_parties(self) -> None:
+        document = self._read()
+        parties_by_kind = {}
+        for party in document.parties:
+            parties_by_kind.setdefault(party.element_kind, []).append(party)
+
+        self.assertEqual({item.party_id for item in parties_by_kind["creator"]}, {"creator-1"})
+        self.assertEqual({item.party_id for item in parties_by_kind["vendor"]}, {"vendor-1"})
+        self.assertEqual({item.party_id for item in parties_by_kind["owner"]}, {"owner-1"})
+        self.assertEqual({item.party_id for item in parties_by_kind["instrument"]}, {"instrument-1"})
+
+        instrument = parties_by_kind["instrument"][0]
+        self.assertEqual(instrument.uuid, "11111111-1111-4111-8111-111111111115")
+        self.assertEqual(instrument.name, "JEOL-SEM")
+        self.assertEqual(instrument.description, "Scanning electron microscope.")
+        self.assertEqual(len(instrument.data_items), 1)
+        item = instrument.data_items[0]
+        self.assertEqual(item.key, "SerialNumber")
+        self.assertIs(item.source_kind, FieldSourceKind.PROPERTY)
+        self.assertEqual(item.xsi_type, "stringType")
+        self.assertEqual(item.raw_values, ("SN-001",))
+
+    def test_creator_keeps_its_own_vendor_ref_and_instrument_ref(self) -> None:
+        document = self._read()
+        creator = next(item for item in document.parties if item.element_kind == "creator")
+        self.assertEqual(creator.name, "KYL:SEM")
+        self.assertEqual([item.target_id for item in creator.vendor_refs], ["vendor-1"])
+        self.assertEqual([item.target_id for item in creator.instrument_refs], ["instrument-1"])
+
+    def test_rejects_dangling_vendor_ref(self) -> None:
+        with self.assertRaises(ConversionError) as caught:
+            self._read(XML.replace('ref="vendor-1"', 'ref="missing-vendor"', 1))
+        self.assertIs(caught.exception.code, ErrorCode.BROKEN_REFERENCE)
+
+    def test_rejects_dangling_instrument_ref(self) -> None:
+        with self.assertRaises(ConversionError) as caught:
+            self._read(XML.replace('ref="instrument-1"', 'ref="missing-instrument"', 1))
+        self.assertIs(caught.exception.code, ErrorCode.BROKEN_REFERENCE)

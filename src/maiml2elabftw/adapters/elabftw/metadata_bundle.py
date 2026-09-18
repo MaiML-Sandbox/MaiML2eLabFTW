@@ -66,6 +66,9 @@ def build_metadata_bundle(plan: TemplatePlan) -> dict[str, Any]:
             "group_id": group_id_by_name[field.group_name],
             "position": position_by_group[field.group_name],
             "required": field.required,
+            # design doc section 6: "property/contentのdescription -> Custom
+            # Fieldのdescription".
+            "description": field.description or "",
         }
 
     generator = plan.metadata.get("maiml", {}).get("generator", {})

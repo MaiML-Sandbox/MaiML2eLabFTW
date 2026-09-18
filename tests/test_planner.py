@@ -173,6 +173,112 @@ class TemplatePlannerTests(unittest.TestCase):
         codes = [item["code"] for item in plan.metadata["conversion_warnings"]]
         self.assertIn("DUPLICATE_KEY_LABEL_SUFFIXED", codes)
 
+    def test_main_text_omits_headings_for_descriptions_that_are_missing(self) -> None:
+        # Default fixture has no document/protocol description, so those
+        # headings must not appear - "空のdescriptionに対して空見出しを大量
+        # 生成しない" (design doc section 6).
+        document = self._read()
+        method = document.methods[0]
+        steps = PnmlOrderResolver().resolve(method)
+        plan = TemplatePlanner().build(document, method, steps)
+
+        self.assertNotIn("## 文書情報", plan.body)
+        self.assertNotIn("## プロトコル概要", plan.body)
+        self.assertIn("## 手法概要", plan.body)
+        self.assertIn("Acquire an SEM image.", plan.body)
+        # Position matters: 手法概要 heading must come with its own body text
+        # right after it, not just anywhere in the string.
+        self.assertIn("## 手法概要\n\nAcquire an SEM image.", plan.body)
+
+    def test_main_text_includes_document_and_protocol_descriptions_when_present(self) -> None:
+        xml = PROTOCOL_XML.replace(
+            "<document id=\"document-1\">",
+            "<document id=\"document-1\">\n    <description>Document level info.</description>",
+        ).replace(
+            "<name>MicroscopyProtocol</name>",
+            "<name>MicroscopyProtocol</name>\n    <description>Protocol overview.</description>",
+        )
+        document = self._read(xml)
+        method = document.methods[0]
+        steps = PnmlOrderResolver().resolve(method)
+        plan = TemplatePlanner().build(document, method, steps)
+
+        self.assertIn("## 文書情報\n\nDocument level info.", plan.body)
+        self.assertIn("## プロトコル概要\n\nProtocol overview.", plan.body)
+
+    def test_main_text_instrument_section_lists_document_level_instruments(self) -> None:
+        document = self._read()
+        method = document.methods[0]
+        steps = PnmlOrderResolver().resolve(method)
+        plan = TemplatePlanner().build(document, method, steps)
+
+        self.assertIn("## 装置情報", plan.body)
+        self.assertIn("JEOL-SEM", plan.body)
+        self.assertIn("MaiML ID: instrument-1", plan.body)
+
+    def test_main_text_program_section_uses_program_title_as_subheading(self) -> None:
+        xml = PROTOCOL_XML.replace(
+            '<program id="program-1">',
+            '<program id="program-1">\n        <name>Acquisition Program</name>'
+            "\n        <description>Runs the acquisition sequence.</description>",
+        )
+        document = self._read(xml)
+        method = document.methods[0]
+        steps = PnmlOrderResolver().resolve(method)
+        plan = TemplatePlanner().build(document, method, steps)
+
+        self.assertIn("## プログラム", plan.body)
+        self.assertIn("### Acquisition Program", plan.body)
+        self.assertIn("Runs the acquisition sequence.", plan.body)
+
+    def test_party_metadata_covers_every_kind_and_keeps_creator_refs(self) -> None:
+        document = self._read()
+        method = document.methods[0]
+        steps = PnmlOrderResolver().resolve(method)
+        plan = TemplatePlanner().build(document, method, steps)
+
+        parties = {item["kind"]: item for item in plan.metadata["maiml"]["parties"]}
+        self.assertEqual(set(parties), {"creator", "vendor", "owner", "instrument"})
+
+        instrument = parties["instrument"]
+        self.assertEqual(instrument["id"], "instrument-1")
+        self.assertEqual(instrument["name"], "JEOL-SEM")
+        self.assertEqual(len(instrument["data_items"]), 1)
+        self.assertEqual(instrument["data_items"][0]["key"], "SerialNumber")
+
+        creator = parties["creator"]
+        self.assertEqual(creator["vendor_refs"], [{"id": "vr-1", "ref": "vendor-1"}])
+        self.assertEqual(creator["instrument_refs"], [{"id": "ir-1", "ref": "instrument-1"}])
+
+    def test_party_metadata_is_counted_as_preserved_in_conversion_summary(self) -> None:
+        document = self._read()
+        method = document.methods[0]
+        steps = PnmlOrderResolver().resolve(method)
+        plan_without_parties = TemplatePlanner().build(replace(document, parties=()), method, steps)
+        plan_with_parties = TemplatePlanner().build(document, method, steps)
+
+        self.assertEqual(
+            plan_with_parties.metadata["maiml"]["conversion_summary"]["preserved_as_metadata"]
+            - plan_without_parties.metadata["maiml"]["conversion_summary"]["preserved_as_metadata"],
+            len(document.parties),
+        )
+
+    def test_custom_field_description_is_carried_onto_the_plan(self) -> None:
+        xml = PROTOCOL_XML.replace(
+            '<property key="AcceleratingVoltage" xsi:type="doubleType" units="kV" '
+            'formatString="0.0" scaleFactor="1.0"><value>200</value></property>',
+            '<property key="AcceleratingVoltage" xsi:type="doubleType" units="kV" '
+            'formatString="0.0" scaleFactor="1.0"><description>Beam accelerating voltage.</description>'
+            "<value>200</value></property>",
+        )
+        document = self._read(xml)
+        method = document.methods[0]
+        steps = PnmlOrderResolver().resolve(method)
+        plan = TemplatePlanner().build(document, method, steps)
+
+        voltage_field = next(item for item in plan.fields if item.metadata["source_key"] == "AcceleratingVoltage")
+        self.assertEqual(voltage_field.description, "Beam accelerating voltage.")
+
 
 if __name__ == "__main__":
     unittest.main()

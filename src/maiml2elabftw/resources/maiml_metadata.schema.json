@@ -383,6 +383,68 @@
         }
       }
     },
+    "dataItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "source_kind", "xsi_type", "raw_values"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_kind": {
+          "enum": ["property", "content"]
+        },
+        "xsi_type": {"$ref": "#/$defs/nullableString"},
+        "unit": {"$ref": "#/$defs/nullableString"},
+        "description": {"$ref": "#/$defs/nullableString"},
+        "raw_values": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "partyReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ref"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "ref": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "party": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "uuid", "name", "description", "annotation", "data_items", "vendor_refs", "instrument_refs"],
+      "properties": {
+        "kind": {
+          "enum": ["creator", "vendor", "owner", "instrument"]
+        },
+        "id": {"$ref": "#/$defs/identifier"},
+        "uuid": {
+          "oneOf": [
+            {"$ref": "#/$defs/uuid"},
+            {"type": "null"}
+          ]
+        },
+        "name": {"$ref": "#/$defs/nullableString"},
+        "description": {"$ref": "#/$defs/nullableString"},
+        "annotation": {"$ref": "#/$defs/nullableString"},
+        "data_items": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/dataItem"}
+        },
+        "vendor_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/partyReference"}
+        },
+        "instrument_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/partyReference"}
+        }
+      }
+    },
     "conversionSummary": {
       "type": "object",
       "additionalProperties": false,
@@ -405,6 +467,7 @@
         "fields",
         "attachments",
         "references",
+        "parties",
         "conversion_summary"
       ],
       "properties": {
@@ -431,6 +494,10 @@
         "fields": {
           "type": "array",
           "items": {"$ref": "#/$defs/field"}
+        },
+        "parties": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/party"}
         },
         "attachments": {
           "type": "array",
